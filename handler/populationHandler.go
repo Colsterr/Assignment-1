@@ -3,30 +3,27 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
-	"Assignment-1/entities" // Ensure this matches your module name in go.mod
+	"Assignment-1/entities"
 )
 
 // PopulationHandler fetches historical population data for a country
 func PopulationHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract country name from URL
-	pathParts := strings.Split(r.URL.Path, "/")
-	if len(pathParts) < 5 {
+	// Extract country name from query parameter
+	countryName := r.URL.Query().Get("country")
+	if countryName == "" {
 		http.Error(w, "Country name is missing in the request.", http.StatusBadRequest)
 		return
 	}
-	countryName := strings.TrimSpace(pathParts[4]) // Keep full country name (not ISO code)
 
-	// Create JSON request payload
+	// Prepare request body
 	requestBody, _ := json.Marshal(map[string]string{"country": countryName})
-
-	// Use the correct API endpoint
 	apiURL := "http://129.241.150.113:3500/api/v0.1/countries/population"
 
-	// Send POST request to external API
+	// Send POST request
 	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(requestBody))
 	if err != nil {
 		http.Error(w, "Failed to fetch population data", http.StatusInternalServerError)
@@ -37,7 +34,10 @@ func PopulationHandler(w http.ResponseWriter, r *http.Request) {
 	// Read response body
 	body, _ := io.ReadAll(resp.Body)
 
-	// If API request fails, return an error
+	// Debugging
+	fmt.Println("API Response Body:", string(body))
+
+	// Handle API failure
 	if resp.StatusCode != http.StatusOK {
 		http.Error(w, "Population data not found", http.StatusNotFound)
 		return
