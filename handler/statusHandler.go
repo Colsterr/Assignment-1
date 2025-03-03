@@ -42,8 +42,8 @@ func StatusHandler(w http.ResponseWriter, _ *http.Request) { // `_` to avoid unu
 func checkAPI(url string) int {
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println("Error reaching API:", url, err) // ✅ Debugging log
-		return 0                                     // ✅ Return 0 if the API is unreachable
+		fmt.Println("Error reaching API:", url, err) //
+		return 0
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
