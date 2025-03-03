@@ -1,22 +1,19 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
-	"Assignment-1/handler" // Ensure this matches your project name
+	"Assignment-1/handler" // Ensure this matches your module name
 )
 
 func main() {
-	// Register API endpoints
-	http.HandleFunc("/", handler.HomeHandler)
-	http.HandleFunc("/countryinfo/v1/info/", handler.InfoHandler)
-	http.HandleFunc("/countryinfo/v1/population/", handler.PopulationHandler)
-	http.HandleFunc("/countryinfo/v1/status/", handler.StatusHandler) // New status endpoint
+	// Register API routes
+	http.HandleFunc("/", handler.InfoHandler)
+	http.HandleFunc("/api/v1/status", handler.StatusHandler)
+	http.HandleFunc("/api/v1/population", handler.PopulationHandler)
 
-	// Start the server
-	port := "8080"
-	fmt.Println("Server is running on port", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	// Start server
+	log.Println("Server is running on port 8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
