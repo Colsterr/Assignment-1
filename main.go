@@ -4,16 +4,19 @@ import (
 	"log"
 	"net/http"
 
-	"Assignment-1/handler" // Ensure this matches your module name
+	"Assignment-1/handler"
+	"github.com/gorilla/mux"
 )
 
 func main() {
-	// Register API routes
-	http.HandleFunc("/", handler.InfoHandler)
-	http.HandleFunc("/api/v1/status", handler.StatusHandler)
-	http.HandleFunc("/api/v1/population", handler.PopulationHandler)
+	r := mux.NewRouter()
 
-	// Start server
-	log.Println("Server is running on port 8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// Register API routes
+	r.HandleFunc("/countryinfo/v1/info/{code}", handler.InfoHandler).Methods("GET")
+	r.HandleFunc("/countryinfo/v1/population/{code}", handler.PopulationHandler).Methods("GET")
+	r.HandleFunc("/countryinfo/v1/status", handler.StatusHandler).Methods("GET")
+
+	// Start the server
+	log.Println("🚀 Server is running on http://localhost:8080")
+	log.Fatal(http.ListenAndServe(":8080", r))
 }

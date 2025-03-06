@@ -7,53 +7,49 @@ import (
 	"time"
 )
 
-// Track server start time
+// ServiceStatus holds the API response structure
+type ServiceStatus struct {
+	CountriesNowAPI  string `json:"countriesnowapi"`
+	RestCountriesAPI string `json:"restcountriesapi"`
+	Version          string `json:"version"`
+	Uptime           int64  `json:"uptime"`
+}
+
+// Start time for calculating uptime
 var startTime = time.Now()
 
-// StatusHandler provides system diagnostics and lists available API endpoints
-func StatusHandler(w http.ResponseWriter, _ *http.Request) { // `_` to avoid unused parameter warning
-	// Define external API endpoints
-	restCountriesAPI := "http://129.241.150.113:8080/v3.1/all"
-	countriesNowAPI := "http://129.241.150.113:3500/api/v0.1/countries"
+// StatusHandler handles the API diagnostics
+func StatusHandler(w http.ResponseWriter, r *http.Request) {
 
-	// Check REST Countries API status
-	restCountriesStatus := checkAPI(restCountriesAPI)
+	fmt.Println("✅ StatusHandler was called!") // test, fjern etterpå
 
-	// Check CountriesNow API status
-	countriesNowStatus := checkAPI(countriesNowAPI)
+	// Check the status of external services
+	countriesNowStatus := checkServiceStatus("https://countriesnow.space/api/v0.1/countries")
+	restCountriesStatus := checkServiceStatus("https://restcountries.com/v3.1/all")
 
 	// Calculate uptime
-	uptime := time.Since(startTime).Seconds()
+	uptime := int64(time.Since(startTime).Seconds())
 
-	// List available API endpoints
-	apiEndpoints := map[string]string{
-		"/api/v1/status":                    "Check API health status",
-		"/api/v1/population?country={name}": "Retrieve population data for a given country",
-		"/api/v1/info/{code}":               "Retrieve country details by ISO code",
+	// Construct response
+	response := ServiceStatus{
+		CountriesNowAPI:  countriesNowStatus,
+		RestCountriesAPI: restCountriesStatus,
+		Version:          "v1",
+		Uptime:           uptime,
 	}
 
-	// Create JSON response
-	response := map[string]interface{}{
-		"message":          "API is running successfully",
-		"countriesnowapi":  countriesNowStatus,
-		"restcountriesapi": restCountriesStatus,
-		"version":          "v1",
-		"uptime":           fmt.Sprintf("%.2f seconds", uptime),
-		"endpoints":        apiEndpoints,
-	}
-
-	// Send JSON response
+	// Set content type and return response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
-// checkAPI sends a request to an API and returns the HTTP status code
-func checkAPI(url string) int {
+// checkServiceStatus pings an API and returns the HTTP status as a string
+func checkServiceStatus(url string) string {
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println("Error reaching API:", url, err)
-		return 0 // Return 0 to indicate the API is unreachable
+		return "Service unavailable"
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode
+
+	return http.StatusText(resp.StatusCode)
 }

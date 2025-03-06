@@ -3,74 +3,135 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 
-	"Assignment-1/entities" // Make sure this matches your go.mod module name
+	"github.com/gorilla/mux"
 )
 
-// InfoHandler fetches country information based on the country code
+// CountryInfo represents the structure of a country response
+type CountryInfo struct {
+	Name       string            `json:"name"`
+	Continents []string          `json:"continents"`
+	Population int               `json:"population"`
+	Languages  map[string]string `json:"languages"`
+	Borders    []string          `json:"borders"`
+	Flag       string            `json:"flag"`
+	Capital    string            `json:"capital"`
+	Cities     []string          `json:"cities,omitempty"`
+}
+
 func InfoHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract country code from URL and ensure it's lowercase
-	pathParts := strings.Split(r.URL.Path, "/")
-	if len(pathParts) < 5 {
-		http.Error(w, "Country code is missing in the request.", http.StatusBadRequest)
+	fmt.Println("InfoHandler called with request") // Debugging log
+
+	vars := mux.Vars(r)
+	countryCode := strings.TrimSpace(strings.ToLower(vars["code"]))
+
+	if countryCode == "" {
+		http.Error(w, "Country code is missing.", http.StatusBadRequest)
 		return
 	}
-	countryCode := strings.TrimSpace(strings.ToLower(pathParts[4])) // Removes spaces & newlines
 
-	// Use the correct API endpoint: /alpha/{code}
-	apiURL := fmt.Sprintf("http://129.241.150.113:8080/v3.1/alpha/%s", countryCode)
-	fmt.Println("Making request to API:", apiURL) // Debugging output
-
-	resp, err := http.Get(apiURL)
+	// Fetch general country info from the REST Countries API
+	countryAPI := fmt.Sprintf("http://129.241.150.113:8080/v3.1/alpha/%s", countryCode)
+	fmt.Println("Calling external API:", countryAPI)
+	resp, err := http.Get(countryAPI)
 	if err != nil {
-		fmt.Println("Failed to reach API:", err)
 		http.Error(w, "Failed to fetch country data", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Debug: Print the response status
-	fmt.Println("Response status:", resp.StatusCode)
-
-	// Read and print response body for debugging
-	body, _ := io.ReadAll(resp.Body)
-	fmt.Println("API Response Body:", string(body))
-
-	// If API request fails, return an error
 	if resp.StatusCode != http.StatusOK {
 		http.Error(w, "Country not found", http.StatusNotFound)
 		return
 	}
 
-	// Decode JSON response
-	var countries []entities.CountryInfo
-	if err := json.Unmarshal(body, &countries); err != nil || len(countries) == 0 {
-		http.Error(w, "Error processing country data", http.StatusInternalServerError)
+	// Decode API response
+	var countryData []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&countryData); err != nil {
+		http.Error(w, "Error processing JSON data", http.StatusInternalServerError)
 		return
 	}
-	country := countries[0] // API returns an array, take the first element
 
-	// Create JSON response
-	response := map[string]interface{}{
-		"name":       country.Name.Common,
-		"continent":  country.Region,
-		"population": country.Population,
-		"languages":  country.Languages,
-		"borders":    country.Borders,
-		"flag":       country.Flags.Png,
-		"capital":    country.Capital,
+	// Extract necessary fields
+	country := countryData[0]
+
+	// Convert JSON response into the expected structure
+	info := CountryInfo{
+		Name:       country["name"].(map[string]interface{})["common"].(string),
+		Continents: []string{country["continents"].([]interface{})[0].(string)},
+		Population: int(country["population"].(float64)),
+		Languages:  convertToStringMap(country["languages"].(map[string]interface{})),
+		Borders:    convertToStringArray(country["borders"].([]interface{})),
+		Flag:       country["flags"].(map[string]interface{})["png"].(string),
+		Capital:    country["capital"].([]interface{})[0].(string),
 	}
 
-	// Send JSON response
+	// Fetch cities from the CountriesNow API
+	citiesAPI := fmt.Sprintf("http://129.241.150.113:3500/api/v0.1/countries/cities")
+	citiesReqBody := fmt.Sprintf(`{"country":"%s"}`, info.Name)
+
+	req, err := http.NewRequest("POST", citiesAPI, strings.NewReader(citiesReqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	citiesResp, err := http.DefaultClient.Do(req)
+	if err == nil {
+		defer citiesResp.Body.Close()
+
+		if citiesResp.StatusCode == http.StatusOK {
+			var citiesData map[string]interface{}
+			if err := json.NewDecoder(citiesResp.Body).Decode(&citiesData); err == nil {
+				info.Cities = convertToStringArray(citiesData["data"].([]interface{}))
+			}
+		} else {
+			fmt.Println("Warning: Could not fetch cities:", citiesResp.Status)
+		}
+	} else {
+		fmt.Println("Warning: Failed to fetch cities:", err)
+	}
+
+	// --- Implement the limit parameter ---
+	if info.Cities != nil {
+		// Sort the cities in ascending alphabetical order
+		sort.Strings(info.Cities)
+
+		// Check if the limit query parameter is provided
+		limitParam := r.URL.Query().Get("limit")
+		if limitParam != "" {
+			limit, err := strconv.Atoi(limitParam)
+			if err != nil {
+				http.Error(w, "Invalid limit parameter", http.StatusBadRequest)
+				return
+			}
+			if limit < len(info.Cities) {
+				info.Cities = info.Cities[:limit]
+			}
+		}
+	}
+	// --- End of limit implementation ---
+
+	// Respond with formatted JSON
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(info)
 }
 
-// HomeHandler provides a welcome message
-func HomeHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Welcome to the Country Info API!\nUse /countryinfo/v1/info/{code} for country details."))
+// Helper function to convert an interface{} array to a string slice
+func convertToStringArray(data []interface{}) []string {
+	var result []string
+	for _, v := range data {
+		result = append(result, v.(string))
+	}
+	return result
+}
+
+// Helper function to convert a map with interface{} values to a string map
+func convertToStringMap(data map[string]interface{}) map[string]string {
+	result := make(map[string]string)
+	for k, v := range data {
+		result[k] = v.(string)
+	}
+	return result
 }
